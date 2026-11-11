@@ -3,8 +3,50 @@ const pool = require('./db');
 let currentUserId = null;
 let currentMode = 'unlimited';
 
+// Tables de base + liste des champions (data/champions.json) : permet de lancer
+// le jeu sur une base PostgreSQL vide, sans manipulation à la main.
+async function createBaseTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS champions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      title TEXT,
+      resource TEXT,
+      genre TEXT,
+      skin_count INTEGER,
+      gender TEXT,
+      attack_type TEXT,
+      release_date INTEGER,
+      region TEXT,
+      lane TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS games (
+      id TEXT PRIMARY KEY,
+      target_champion_id TEXT NOT NULL REFERENCES champions(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM champions');
+  if (rows[0].n > 0) return;
+
+  const champions = require('./data/champions.json');
+  for (const c of champions) {
+    await pool.query(
+      `INSERT INTO champions (id, name, title, resource, genre, skin_count, gender, attack_type, release_date, region, lane)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (id) DO NOTHING`,
+      [c.id, c.name, c.title, c.resource, c.genre, c.skinCount, c.gender, c.attackType, c.releaseDate, c.region, c.lane]
+    );
+  }
+  console.log(`✅ ${champions.length} champions ajoutés à la base`);
+}
+
 async function initializeDatabase() {
   try {
+    await createBaseTables();
+
     const migrations = `
       ALTER TABLE games ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'unlimited' NOT NULL;
       ALTER TABLE games ADD COLUMN IF NOT EXISTS date_key TEXT;
